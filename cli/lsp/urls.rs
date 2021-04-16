@@ -2,7 +2,7 @@
 
 use crate::file_fetcher::map_content_type;
 use crate::media_type::MediaType;
-
+use data_url::{ DataUrl };
 use deno_core::error::AnyError;
 use deno_core::url::Position;
 use deno_core::url::Url;
@@ -50,14 +50,10 @@ fn hash_data_specifier(specifier: &ModuleSpecifier) -> String {
 }
 
 fn data_url_media_type(specifier: &ModuleSpecifier) -> MediaType {
-  let path = specifier.path();
-  let mut parts = path.splitn(2, ',');
-  let media_type_part =
-    percent_encoding::percent_decode_str(parts.next().unwrap())
-      .decode_utf8_lossy();
-  let (media_type, _) =
-    map_content_type(specifier, Some(media_type_part.into()));
-  media_type
+  let url = DataUrl::process(specifier.path()).unwrap();
+  let (media_type, _) = 
+    map_content_type(specifier, Some(url.mime_type().type_.clone())); 
+  media_type 
 }
 
 /// A bi-directional map of URLs sent to the LSP client and internal module

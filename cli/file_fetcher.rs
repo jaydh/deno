@@ -10,6 +10,7 @@ use crate::http_util::FetchOnceResult;
 use crate::media_type::MediaType;
 use crate::text_encoding;
 use crate::version::get_user_agent;
+use data_url::{ DataUrl };
 use deno_core::error::custom_error;
 use deno_core::error::generic_error;
 use deno_core::error::uri_error;
@@ -156,35 +157,24 @@ pub fn get_source_from_bytes(
 fn get_source_from_data_url(
   specifier: &ModuleSpecifier,
 ) -> Result<(String, MediaType, String), AnyError> {
-  if specifier.scheme() != "data" {
-    return Err(custom_error(
-      "BadScheme",
-      format!("Unexpected scheme of \"{}\"", specifier.scheme()),
-    ));
-  }
-  let path = specifier.path();
-  let mut parts = path.splitn(2, ',');
-  let media_type_part =
-    percent_encoding::percent_decode_str(parts.next().unwrap())
-      .decode_utf8()?;
-  let data_part = if let Some(data) = parts.next() {
-    data
-  } else {
-    return Err(custom_error(
-      "BadUrl",
-      "The data URL is badly formed, missing a comma.",
-    ));
+  let data_url = format!("{}:{}", String::from(specifier.scheme()), String::from(specifier.path()));
+  let url = match DataUrl::process(&data_url) {
+        Ok(url) => url,
+        Err(error) => return Err(custom_error(
+                                  "process data url error:"
+                                  error,
+                                )),
   };
-  let (media_type, maybe_charset) =
-    map_content_type(specifier, Some(media_type_part.to_string()));
-  let is_base64 = media_type_part.rsplit(';').any(|p| p == "base64");
-  let bytes = if is_base64 {
-    base64::decode(data_part)?
-  } else {
-    percent_encoding::percent_decode_str(data_part).collect()
-  };
-  let source = strip_shebang(get_source_from_bytes(bytes, maybe_charset)?);
-  Ok((source, media_type, media_type_part.to_string()))
+  let media_type_part = format!("{}/{}", url.mime_type().type_, url.mime_type().subtype);
+
+  let (media_type, _) = 
+    map_content_type(specifier, Some(media_type_part.clone())); 
+  let (body, _) = url.decode_to_vec().unwrap();
+  let source = String::from_utf8(body).unwrap();
+
+  println!("huh {:?}", media_type_part);
+
+  Ok((source, media_type, media_type_part))
 }
 
 /// Return a validated scheme for a given module specifier.
